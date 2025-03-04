@@ -5,10 +5,10 @@ void execute_internal_cmd( char *input)
     if(strcmp(input, "exit")==0)
         exit(0);
 
-    else if(strncmp(input, "cd ", 3)==0)
+    else if(strncmp(input, "cd", 2)==0)
     {
         //refer chdir() function
-        char *dir = input+3;
+        char *dir = input+2;
 
         while(*dir == ' ')
             dir++;
@@ -25,6 +25,4 @@ void execute_internal_cmd( char *input)
 
     else if(strcmp(input, "pwd")==0)
         system("pwd");
-
-    // printf("%s\n", input);
 }

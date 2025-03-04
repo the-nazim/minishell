@@ -1,0 +1,400 @@
+#include "main.h"
+
+int status;
+int child_pid;
+char global_prompt[25];
+
+void scan_input(char *prompt, char *input_string) {
+    strcpy(global_prompt, prompt);
+
+    signal(SIGINT, sigint_handler);
+    signal(SIGTSTP, sigtstp_handler);
+    signal(SIGCHLD, sigchld_handler);
+
+    Slist *head = NULL;
+    int num=0;
+    
+    int pipe=0; 
+
+    if(prompt == NULL && input_string == NULL)
+        printf("%s ", prompt);
+
+    while(1){
+        memset(input_string, 0, 25);
+        printf("%s ", prompt);
+        scanf("%[^\n]", input_string);
+        getchar();
+
+        if(strncmp("PS1=", input_string, 4)==0){
+            if(input_string[4] != ' ')
+            {
+                strcpy(prompt, &input_string[4]);
+                strcpy(global_prompt, prompt);
+            }
+        }
+
+        char *cmd = get_cmd(input_string);
+        int ret = check_cmd(cmd);
+
+        if(strcmp(input_string, "exit")==0)
+            exit(0);
+
+        for(int i=0; input_string[i]!='\0'; i++)
+        {
+            if(input_string[i] == '|')
+            {
+                pipe = 1;
+                break;
+            }
+        }
+
+        if(ret == EXTERNAL)
+        {
+            if(pipe==1)
+                pipe_handler(input_string);
+            
+            else
+            {   
+                char exec_cmd[25][25];
+                char *argv[25]; 
+                int j=0,k=0;
+
+                for(int i=0; input_string[i]!='\0';i++)
+                {
+                    if(input_string[i] != ' ')
+                    {
+                        exec_cmd[j][k++] = input_string[i];
+                    }
+                    else
+                    {
+                        exec_cmd[j][k] = '\0';
+                        argv[j] = exec_cmd[j];
+                        j++;
+                        k=0;
+                    }
+                }
+        
+                exec_cmd[j][k] = '\0';
+                argv[j] = exec_cmd[j]; 
+                j++;
+                argv[j] = NULL; 
+
+                int pid = fork();
+                if(pid == 0)
+                {
+                    
+                    signal(SIGINT, SIG_DFL);
+                    signal(SIGTSTP, SIG_DFL);
+                    signal(SIGCHLD, SIG_DFL);
+
+                    execvp(argv[0], argv);
+                }
+
+                else 
+                {
+                    // Parent process
+                    if (bg) 
+                    {
+                        // Background process - add to job list
+                        job_num++;
+                        insert_into_list(&job_list, job_num, pid, cmd, "Running");
+                        
+                        // Don't wait for it to complete
+                        printf("%s ", prompt);
+                    } 
+                    else 
+                    {
+                        // Foreground process
+                        child_pid = pid;
+                        
+                        // Wait for it to complete or stop
+                        waitpid(pid, &status, WUNTRACED);
+                        
+                        // Check if it was stopped
+                        if(WIFSTOPPED(status) || sig_caught == 1) {
+                            job_num++;
+                            insert_into_list(&job_list, job_num, pid, cmd, "Stopped");
+                            sig_caught = 0;
+                        }
+                        
+                        child_pid = 0;
+                        printf("%s ", prompt);
+                    }
+                }
+                // else
+                // {
+                //     child_pid = pid;
+                //     waitpid(pid, &status, WUNTRACED);
+                    
+                //     // If the child was stopped by a signal
+                //     if(WIFSTOPPED(status) || sig_caught == 1) {
+                //         num++;
+                //         insert_into_list(&head, num, input_string);
+                //         sig_caught = 0;
+                //     }
+                    
+                //     child_pid = 0; 
+                // }
+            }
+        }
+        else if(ret == INTERNAL)
+        {
+            execute_internal_cmd(input_string);
+        }
+        else
+            echo_spcl(input_string);
+
+        if(strcmp(input_string, "jobs")==0)
+        {
+            Slist *current = head;
+            if(current == NULL) {
+                printf("No jobs\n");
+            }
+            else
+                print_list(&head);
+        }
+
+        if(strncmp(input_string, "bg", 2) == 0) {
+            bg_command(&job_list, input_string + 3);  // Skip "bg " to get arguments
+            printf("%s ", prompt);
+        }
+
+        if(strncmp(input_string, "fg", 2) == 0) {
+            fg_command(&job_list, input_string + 3);  // Skip "fg " to get arguments
+            printf("%s ", prompt);
+        }
+
+        memset(input_string, 0, 25);
+    }
+}
+
+linked list
+// #include "main.h"
+
+// void insert_into_list(Slist **head, int num, int pid, char *input_string, char *status)
+// {
+//     Slist *new_node = malloc(sizeof(Slist));
+
+//     if(new_node == NULL)
+//         printf("Error\n");
+
+//     new_node->num = num;
+//     new_node->pid = pid;
+//     new_node->status = strdup("Stopped");
+//     new_node->cmd = strdup(input_string);
+//     new_node->next = *head;
+//     *head = new_node;
+
+// }
+
+// // Print all jobs
+// void print_list(Slist *head)
+// {
+//     Slist *current = head;
+//     if (current == NULL) {
+//         printf("No jobs\n");
+//         return;
+//     }
+    
+//     while (current != NULL) {
+//         printf("[%d] %d %s %s\n", current->num, current->pid, current->status, current->cmd);
+//         current = current->next;
+//     }
+// }
+
+// // Remove a job from the list
+// void remove_job(Slist **head, int pid)
+// {
+//     Slist *current = *head;
+//     Slist *prev = NULL;
+    
+//     // If head node itself holds the pid to be deleted
+//     if (current != NULL && current->pid == pid) {
+//         *head = current->next;   // Changed head
+//         free(current->cmd);      // Free memory
+//         free(current->status);   // Free memory
+//         free(current);           // Free memory
+//         return;
+//     }
+    
+//     // Search for the pid to be deleted
+//     while (current != NULL && current->pid != pid) {
+//         prev = current;
+//         current = current->next;
+//     }
+    
+//     // If pid was not present in linked list
+//     if (current == NULL) return;
+    
+//     // Unlink the node from linked list
+//     prev->next = current->next;
+    
+//     // Free memory
+//     free(current->cmd);
+//     free(current->status);
+//     free(current);
+// }
+
+// // Get the last (highest) job number
+// int get_last_job_num(Slist *head)
+// {
+//     if (head == NULL) return 0;
+    
+//     int max_num = 0;
+//     Slist *current = head;
+    
+//     while (current != NULL) {
+//         if (current->num > max_num) {
+//             max_num = current->num;
+//         }
+//         current = current->next;
+//     }
+    
+//     return max_num;
+// }
+
+// // Get the pid of the most recently added job
+// int get_last_job_pid(Slist *head)
+// {
+//     if (head == NULL) return 0;
+//     return head->pid;
+// }
+
+// // Find a job by job number
+// Slist* find_job_by_num(Slist *head, int num)
+// {
+//     Slist *current = head;
+//     while (current != NULL) {
+//         if (current->num == num) {
+//             return current;
+//         }
+//         current = current->next;
+//     }
+//     return NULL;
+// }
+
+
+signal handlers
+
+
+
+
+// #include "main.h"
+
+// int sig_caught = 0;
+
+// void sigint_handler(int signum)
+// {
+//     if(child_pid != 0)
+//         kill(child_pid, SIGINT);
+//     else
+//     {
+//         printf("\n%s ", global_prompt);
+//         fflush(stdout);
+//     }
+// }
+
+// void sigtstp_handler(int signum)
+// {
+//     if(child_pid != 0)
+//     {
+//         kill(child_pid, SIGSTOP);
+//         printf("\nProcess Stpped\n");
+//         sig_caught = 1;
+//         fflush(stdout);
+//     }
+//     else
+//     {
+//         printf("\n%s ", global_prompt);
+//         fflush(stdout);
+//     }
+// }
+
+// // Handler for SIGCHLD (child process termination)
+// void sigchld_handler(int signum)
+// {
+//     int saved_errno = errno;
+//     pid_t pid;
+//     int status;
+    
+//     // Use waitpid with WNOHANG to avoid blocking
+//     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+//         // Find the job in our list
+//         Slist *job = find_job_by_pid(job_list, pid);
+        
+//         if (job != NULL) {
+//             if (WIFEXITED(status)) {
+//                 printf("\n[%d] %d Done %s (exit status: %d)\n", 
+//                        job->num, job->pid, job->cmd, WEXITSTATUS(status));
+//                 remove_job(&job_list, pid);
+//             } else if (WIFSIGNALED(status)) {
+//                 printf("\n[%d] %d Terminated %s (signal: %d)\n", 
+//                        job->num, job->pid, job->cmd, WTERMSIG(status));
+//                 remove_job(&job_list, pid);
+//             }
+            
+//             // Print prompt again
+//             printf("%s ", global_prompt);
+//             fflush(stdout);
+//         }
+//     }
+    
+//     errno = saved_errno;
+// }
+
+
+main.h
+
+
+
+// #include<stdio.h>
+// #include<stdlib.h>
+// #include<string.h>
+// #include<unistd.h>
+// #include<fcntl.h>
+// #include<sys/wait.h>
+// #include<sys/stat.h>
+// #include<stdio_ext.h>
+// #include<signal.h>
+// #include<sys/types.h>
+
+// #define EXTERNAL 1
+// #define INTERNAL 2
+// #define NO_COMMAND 3
+
+// extern int status;
+// extern int child_pid;
+// extern char global_prompt[25];
+// extern int num;
+// extern int sig_caught;
+
+// typedef struct node {
+//     int num;
+//     int pid;
+//     char *status;
+//     char *cmd;
+//     struct node *next;
+// }Slist;
+
+// void scan_input(char *prompt, char *input_string);
+// char *get_cmd(char *input_string);
+// void execute_internal_cmd(char *input);
+// int check_cmd(char *command);
+// int echo_spcl(char * input);
+// void sigint_handler(int signum);
+// void sigtstp_handler(int signum);
+// char *get_command_name(int pid);
+// void insert_into_list(Slist **head, int num, int pid, char *input_string, char *status)
+// void print_list(Slist **head);
+// void pipe_handler(char *input_string);
+// void sigchld_handler(int signum);
+// void remove_job(Slist **head, int pid);
+// Slist *find_job_by_pid(Slist *head, int pid);
+// void bg_command(Slist **head, char *input_string);
+// void fg_command(Slist **head, char *input_string);
+// void scan_input(char *prompt, char *input_string);
+// void insert_into_list(Slist **head, int num, int pid, char *input_string, char *status);
+// void print_list(Slist **head);
+// void remove_job(Slist **head, int pid);
+// int get_last_job_num(Slist *head);
+// int get_last_job_pid(Slist *head);
