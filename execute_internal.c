@@ -15,7 +15,7 @@ void execute_internal_cmd( char *input)
 
         if(chdir(dir) == 0)
         {
-            char cwd[200];
+            char cwd[1024];
             if (getcwd(cwd, sizeof(cwd)) != NULL) 
                 printf("%s\n", cwd);
         }
@@ -25,4 +25,7 @@ void execute_internal_cmd( char *input)
 
     else if(strcmp(input, "pwd")==0)
         system("pwd");
+
+    else if(strcmp(input, "clear")==0)
+        system("clear");
 }

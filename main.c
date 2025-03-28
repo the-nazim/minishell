@@ -2,7 +2,7 @@
 
 int main() {
     char prompt[25] = "minishell$";
-    char input_string[50];
+    char input_string[1024];
 
     scan_input(prompt, input_string);
     return 0;
